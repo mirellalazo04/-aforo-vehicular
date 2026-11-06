@@ -1,5 +1,5 @@
 
-const CACHE = "aforo-vehicular-offline-v2";
+const CACHE = "aforo-vehicular-offline-v4";
 
 const ARCHIVOS = [
   "./",
