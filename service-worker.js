@@ -1,50 +1,62 @@
 
-const CACHE = "aforo-vehicular-v1";
+const CACHE = "aforo-vehicular-offline-v2";
 
-const ASSETS = [
+const ARCHIVOS = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
   "./icon.svg"
 ];
 
+// Guardar los archivos necesarios durante la instalación.
 self.addEventListener("install", event => {
   event.waitUntil(
-    caches.open(CACHE).then(cache => cache.addAll(ASSETS))
+    caches.open(CACHE)
+      .then(cache => cache.addAll(ARCHIVOS))
+      .then(() => self.skipWaiting())
   );
-  self.skipWaiting();
 });
 
+// Eliminar cachés antiguas.
 self.addEventListener("activate", event => {
   event.waitUntil(
     caches.keys().then(keys =>
       Promise.all(
-        keys.filter(key => key !== CACHE)
-            .map(key => caches.delete(key))
+        keys
+          .filter(key => key.startsWith("aforo-vehicular-") && key !== CACHE)
+          .map(key => caches.delete(key))
       )
-    )
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
+// Para la aplicación, buscar primero la copia local.
 self.addEventListener("fetch", event => {
-  if (event.request.method !== "GET") return;
+  const request = event.request;
 
-  const url = new URL(event.request.url);
+  if (request.method !== "GET") return;
 
+  const url = new URL(request.url);
+
+  // Solo administrar archivos de nuestra aplicación.
   if (url.origin !== self.location.origin) return;
 
+  const base = new URL(self.registration.scope);
+  if (!url.pathname.startsWith(base.pathname)) return;
+
   event.respondWith(
-    fetch(event.request)
-      .then(response => {
+    caches.match(request).then(cached => {
+      if (cached) return cached;
+
+      return fetch(request).then(response => {
         if (response.ok) {
           const copy = response.clone();
           caches.open(CACHE).then(cache =>
-            cache.put(event.request, copy)
+            cache.put(request, copy)
           );
         }
         return response;
-      })
-      .catch(() => caches.match(event.request))
+      });
+    })
   );
 });
