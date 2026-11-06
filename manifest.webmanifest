@@ -1,0 +1,19 @@
+
+{
+  "name": "Aforo vehicular",
+  "short_name": "Aforo vehicular",
+  "description": "Sistema de conteo y clasificación vehicular",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#edf2f7",
+  "theme_color": "#103c70",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
