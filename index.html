@@ -513,6 +513,59 @@ navigator.serviceWorker.register("./service-worker.js")
 .catch(e=>console.warn("Offline no disponible:",e));
 });
 }
+<script>
+/*
+ * ACTUALIZACIÓN: NOMBRE PERSONALIZADO DEL EXCEL
+ * Conserva la función original y todos los datos.
+ */
+(function () {
+  const exportarOriginal = window.exportExcel;
+
+  window.exportExcel = function () {
+    const nombreSugerido = (
+      "Aforo_" +
+      (state.place || "Vehicular") +
+      "_" +
+      state.date
+    )
+      .replace(/[\\/:*?"<>|]/g, "_")
+      .replace(/\s+/g, "_");
+
+    const nombreIngresado = prompt(
+      "¿Con qué nombre deseas guardar el Excel?",
+      nombreSugerido
+    );
+
+    if (nombreIngresado === null) return;
+
+    const nombreFinal = nombreIngresado
+      .trim()
+      .replace(/[\\/:*?"<>|]/g, "_")
+      .replace(/\.xlsx$/i, "")
+      .trim();
+
+    if (!nombreFinal) {
+      alert("Debes ingresar un nombre.");
+      return;
+    }
+
+    // Interceptar únicamente el nombre de esta exportación.
+    const descargaOriginal = window.download;
+
+    window.download = function (contenido, nombre, tipo) {
+      if (nombre === "Aforo_vehicular_multifecha.xlsx") {
+        nombre = nombreFinal + ".xlsx";
+      }
+      return descargaOriginal(contenido, nombre, tipo);
+    };
+
+    try {
+      exportarOriginal();
+    } finally {
+      window.download = descargaOriginal;
+    }
+  };
+})();
 </script>
 </body>
 </html>
