@@ -1,8 +1,8 @@
 
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="utf-8">
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#103c70">
 <link rel="manifest" href="./manifest.webmanifest">
@@ -39,6 +39,14 @@ button{border:0;border-radius:7px;padding:10px;cursor:pointer;font-weight:bold}
 .small{font-size:11px;color:#62758a}
 details{margin-top:10px}
 summary{cursor:pointer;font-weight:bold}
+.table-wrap{overflow:auto;max-height:510px;margin-top:10px;border:1px solid #d1dbe7;border-radius:7px}
+#tablaMTC{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size:12px}
+#tablaMTC th,#tablaMTC td{border-right:1px solid #d1dbe7;border-bottom:1px solid #d1dbe7;padding:8px;text-align:center;white-space:nowrap}
+#tablaMTC th{background:#dfe9f5;position:sticky;top:0;z-index:2}
+#tablaMTC tbody tr:nth-child(even){background:#f5f8fc}
+#tablaMTC td:first-child,#tablaMTC th:first-child{position:sticky;left:0;background:#edf2f7;z-index:1}
+#tablaMTC th:first-child{z-index:3}
+#tablaMTC tfoot td{background:#dfe9f5;font-weight:bold;position:sticky;bottom:0}
 @media(max-width:1000px){.vehicles{grid-template-columns:repeat(6,minmax(0,1fr))}}
 @media(max-width:650px){
 .grid{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -77,6 +85,7 @@ summary{cursor:pointer;font-weight:bold}
 <button class="red" onclick="resetAll()">Nueva intersección / Reiniciar</button>
 </div>
 </section>
+
 <section>
 <h3>2. Registro de vehículos</h3>
 <div class="grid">
@@ -93,23 +102,39 @@ summary{cursor:pointer;font-weight:bold}
 <button class="gray" onclick="undo()">↶ Deshacer</button>
 </div>
 </section>
+
 <section>
 <h3>3. Tipologías vehiculares</h3>
 <div class="vehicles" id="vehicles"></div>
 </section>
+
 <section>
 <h3>4. Exportación y respaldo</h3>
 <div class="buttons">
-<button class="blue" onclick="exportExcel()">📊 Exportar Excel multifecha</button>
+<button class="blue" onclick="exportExcel()">📊 Exportar Excel multifecha (.xlsx)</button>
 <button class="gray" onclick="backup()">💾 Guardar respaldo</button>
 <button class="gray" onclick="document.getElementById('file').click()">📂 Recuperar respaldo</button>
 </div>
 <input id="file" type="file" accept=".json" hidden onchange="restore(event)">
-<p class="small">Los conteos se guardan en este dispositivo. Exporta respaldos periódicamente. No borres los datos del navegador.</p>
+<p class="small">Excel con todas las fechas, intervalos y giros. Los datos se guardan en este dispositivo. Haz respaldos periódicos.</p>
+
+<details id="tablaConteos">
+<summary>Ver tabla de conteos</summary>
+<div class="table-wrap">
+<table id="tablaMTC">
+<thead id="tablaCabecera"></thead>
+<tbody id="tablaCuerpo"></tbody>
+<tfoot id="tablaPie"></tfoot>
+</table>
+</div>
+<p class="small">Desliza la tabla hacia los lados para visualizar las 24 tipologías. Incluye intervalos y giros sin vehículos registrados.</p>
+</details>
 </section>
 </main>
+
 <script>
 "use strict";
+
 const TYPES=[
 "Auto","Station Wagon","Pick Up","Rural (Combi)",
 "Micro","Bus 2E","Bus 3E","Bus 4E",
@@ -119,18 +144,24 @@ const TYPES=[
 "Tráiler 2T2","Tráiler 2T3","Tráiler 3T2",
 "Tráiler >=3T3","Mototaxi","Moto"
 ];
+
 const $=id=>document.getElementById(id);
 const STORE="aforo_vehicular_v1";
+
 function fresh(){
 let d=new Date();
 let date=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
-return {place:"",station:"",date,turns:"1,2,3,4",start:"06:00",end:"10:00",counts:{}};
+return {place:"",station:"",date,turns:"1,2,3,4",start:"06:00",end:"10:00",counts:{},configs:{}};
 }
+
 let state;
 try{state=JSON.parse(localStorage.getItem(STORE))||fresh()}
 catch(e){state=fresh()}
 if(!state.counts||typeof state.counts!=="object")state=fresh();
+if(!state.configs||typeof state.configs!=="object")state.configs={};
+
 let actions=[];
+
 function save(){
 try{localStorage.setItem(STORE,JSON.stringify(state))}
 catch(e){alert("No se pudo guardar. Exporta un respaldo.")}
@@ -141,21 +172,34 @@ function fill(){
 function read(){
 ["place","station","date","turns","start","end"].forEach(k=>state[k]=$(k).value);
 }
-function turns(){
-return [...new Set(state.turns.split(",").map(x=>x.trim()).filter(Boolean))];
+function turnsFor(s){
+return [...new Set(String(s||"").split(",").map(x=>x.trim()).filter(Boolean))];
 }
+function turns(){return turnsFor(state.turns)}
 function mins(s){let [h,m]=s.split(":").map(Number);return h*60+m}
 function time(n){
 n=((n%1440)+1440)%1440;
 return String(Math.floor(n/60)).padStart(2,"0")+":"+String(n%60).padStart(2,"0");
 }
-function periods(){
-let a=mins(state.start),b=mins(state.end);
+function periodsFor(start,end){
+if(!start||!end)return [];
+let a=mins(start),b=mins(end);
+if(!Number.isFinite(a)||!Number.isFinite(b))return [];
 if(b<=a)b+=1440;
 let out=[];
 for(let t=a;t+15<=b;t+=15)out.push(time(t)+" - "+time(t+15));
 return out;
 }
+function periods(){return periodsFor(state.start,state.end)}
+
+function saveDateConfig(){
+state.configs[state.date]={
+turns:state.turns,
+start:state.start,
+end:state.end
+};
+}
+
 function selectors(){
 let oldTurn=$("turn").value,oldPeriod=$("period").value;
 $("turn").replaceChildren();
@@ -165,6 +209,7 @@ periods().forEach(t=>$("period").add(new Option(t,t)));
 if(turns().includes(oldTurn))$("turn").value=oldTurn;
 if(periods().includes(oldPeriod))$("period").value=oldPeriod;
 }
+
 function configure(){
 let old={...state};
 read();
@@ -172,8 +217,10 @@ if(!state.date||!turns().length||!periods().length){
 state=old;fill();
 alert("Revisa la fecha, los giros y los horarios.");return;
 }
+saveDateConfig();
 actions=[];save();selectors();render();
 }
+
 function key(t){
 return JSON.stringify([state.date,$("period").value,$("turn").value,t]);
 }
@@ -197,6 +244,7 @@ function move(d){
 let s=$("period"),i=s.selectedIndex+d;
 if(i>=0&&i<s.options.length){s.selectedIndex=i;render()}
 }
+
 function render(){
 let area=$("vehicles");area.replaceChildren();
 let sum=0;
@@ -214,7 +262,9 @@ controls.append(minus,plus);card.append(name,num,controls);area.append(card);
 });
 $("subtotal").textContent=sum;
 $("total").textContent=Object.values(state.counts).reduce((a,b)=>a+Number(b||0),0);
+if($("tablaConteos").open)actualizarTablaMTC();
 }
+
 function rows(){
 let map=new Map();
 for(let [k,n] of Object.entries(state.counts)){
@@ -229,6 +279,67 @@ map.get(id).values[type]=(map.get(id).values[type]||0)+Number(n);
 return [...map.values()].sort((a,b)=>a.date.localeCompare(b.date)||
 a.period.localeCompare(b.period)||String(a.turn).localeCompare(String(b.turn),undefined,{numeric:true}));
 }
+
+function tableRows(){
+const map=new Map();
+const dates=new Set([state.date,...Object.keys(state.configs)]);
+for(const r of rows())dates.add(r.date);
+
+for(const date of [...dates].sort()){
+const cfg=state.configs[date]||{
+turns:state.turns,start:state.start,end:state.end
+};
+for(const period of periodsFor(cfg.start,cfg.end)){
+for(const turn of turnsFor(cfg.turns)){
+const id=JSON.stringify([date,period,turn]);
+map.set(id,{date,period,turn,values:{}});
+}
+}
+}
+for(const r of rows()){
+const id=JSON.stringify([r.date,r.period,r.turn]);
+if(!map.has(id))map.set(id,{date:r.date,period:r.period,turn:r.turn,values:{}});
+Object.assign(map.get(id).values,r.values);
+}
+return [...map.values()].sort((a,b)=>
+a.date.localeCompare(b.date)||
+a.period.localeCompare(b.period)||
+String(a.turn).localeCompare(String(b.turn),undefined,{numeric:true}));
+}
+
+function actualizarTablaMTC(){
+const head=$("tablaCabecera"),body=$("tablaCuerpo"),foot=$("tablaPie");
+head.replaceChildren();body.replaceChildren();foot.replaceChildren();
+
+function makeRow(values,tag){
+const tr=document.createElement("tr");
+values.forEach(v=>{
+const el=document.createElement(tag);
+el.textContent=v;
+tr.appendChild(el);
+});
+return tr;
+}
+head.appendChild(makeRow(["FECHA","INTERVALO","GIRO",...TYPES,"TOTAL"],"th"));
+
+const data=tableRows();
+const totals=TYPES.map(()=>0);
+let grand=0;
+const fragment=document.createDocumentFragment();
+
+for(const r of data){
+const nums=TYPES.map((t,i)=>{
+const n=r.values[t]||0;
+totals[i]+=n;return n;
+});
+const sum=nums.reduce((a,b)=>a+b,0);
+grand+=sum;
+fragment.appendChild(makeRow([r.date,r.period,r.turn,...nums,sum],"td"));
+}
+body.appendChild(fragment);
+foot.appendChild(makeRow(["TOTAL GENERAL","","",...totals,grand],"td"));
+}
+
 function download(content,name,mime){
 let blob=content instanceof Blob?content:new Blob([content],{type:mime});
 let url=URL.createObjectURL(blob);
@@ -247,7 +358,9 @@ try{
 let obj=JSON.parse(reader.result);
 if(!obj.counts||typeof obj.counts!=="object")throw Error();
 if(!confirm("¿Reemplazar los conteos actuales por el respaldo?"))return;
-state={...fresh(),...obj};actions=[];save();fill();selectors();render();
+state={...fresh(),...obj};
+if(!state.configs)state.configs={};
+actions=[];save();fill();selectors();render();
 alert("Respaldo recuperado.");
 }catch(err){alert("Respaldo no válido.")}
 };
@@ -258,6 +371,7 @@ if(!confirm("¿Nueva intersección? Exporta primero tus conteos y respaldo."))re
 if(!confirm("¿Confirmas borrar todos los conteos de todas las fechas?"))return;
 state=fresh();actions=[];save();fill();selectors();render();
 }
+
 const enc=new TextEncoder();
 function xml(s){return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
 function column(n){
@@ -318,12 +432,14 @@ chunks.push(...central,new Uint8Array([
 ]));
 return new Blob(chunks,{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
 }
+
 function exportExcel(){
-let data=rows();
-if(!data.length){alert("No hay conteos registrados.");return}
+let data=tableRows();
+if(!data.length){alert("No hay intervalos para exportar.");return}
 let header=["Fecha","Intersección","Estación","Intervalo","Giro",...TYPES,"TOTAL"];
 let main=[header],detail=[["Fecha","Intervalo","Giro","Tipología","Cantidad"]];
 let daily=new Map(),totals=TYPES.map(()=>0),overall=0;
+
 for(let r of data){
 let nums=TYPES.map((t,i)=>{
 let n=r.values[t]||0;totals[i]+=n;
@@ -362,13 +478,35 @@ names.map((_,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlforma
 tables.forEach((t,i)=>files.push([`xl/worksheets/sheet${i+1}.xml`,worksheet(t)]));
 download(zip(files),"Aforo_vehicular_multifecha.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 }
-fill();selectors();render();
-$("date").addEventListener("change",()=>{
-state.date=$("date").value;actions=[];save();render();
+
+fill();
+selectors();
+render();
+
+$("tablaConteos").addEventListener("toggle",()=>{
+if($("tablaConteos").open)actualizarTablaMTC();
 });
+
+$("date").addEventListener("change",()=>{
+state.date=$("date").value;
+const cfg=state.configs[state.date];
+if(cfg){
+state.turns=cfg.turns;
+state.start=cfg.start;
+state.end=cfg.end;
+$("turns").value=state.turns;
+$("start").value=state.start;
+$("end").value=state.end;
+}else{
+saveDateConfig();
+}
+actions=[];save();selectors();render();
+});
+
 ["place","station"].forEach(id=>$(id).addEventListener("change",()=>{
 state[id]=$(id).value;save();
 }));
+
 if("serviceWorker" in navigator){
 window.addEventListener("load",()=>{
 navigator.serviceWorker.register("./service-worker.js")
