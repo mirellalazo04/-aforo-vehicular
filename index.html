@@ -1,0 +1,380 @@
+
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#103c70">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<title>Aforo vehicular</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#edf2f7;color:#102c4e;font:13px Arial,sans-serif}
+header{background:#103c70;color:white;padding:10px;text-align:center}
+header h2{margin:0;font-size:18px}
+main{max-width:1450px;margin:auto;padding:8px}
+section{background:white;border-radius:12px;padding:12px;margin-bottom:8px}
+h3{font-size:15px;margin:3px 0 10px}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+label{display:block;font-size:12px;font-weight:bold;margin-bottom:4px}
+input,select{width:100%;padding:10px;border:1px solid #c7d4e3;border-radius:7px;background:white;font-size:13px}
+button{border:0;border-radius:7px;padding:10px;cursor:pointer;font-weight:bold}
+.blue{background:#1b60aa;color:white}
+.red{background:#b52d3a;color:white}
+.gray{background:#e3ebf5;color:#103c70}
+.buttons{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}
+.buttons button{flex:1;min-width:90px}
+.summary{display:flex;gap:8px;margin:9px 0}
+.summary div{flex:1;background:#e8f0fb;text-align:center;padding:10px;border-radius:8px}
+.summary strong{display:block;font-size:23px}
+.vehicles{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px}
+.vehicle{background:#f3f7fc;border:1px solid #d0ddeb;border-radius:8px;padding:7px;text-align:center;min-width:0}
+.name{font-size:11px;font-weight:bold;min-height:28px;display:flex;align-items:center;justify-content:center;overflow-wrap:anywhere}
+.number{font-size:23px;font-weight:bold;margin:5px}
+.controls{display:flex;gap:4px}
+.controls button{flex:1;font-size:19px;padding:8px 0}
+.plus{background:#14784b;color:white}
+.minus{background:#f6d9de;color:#a22330}
+.small{font-size:11px;color:#62758a}
+details{margin-top:10px}
+summary{cursor:pointer;font-weight:bold}
+@media(max-width:1000px){.vehicles{grid-template-columns:repeat(6,minmax(0,1fr))}}
+@media(max-width:650px){
+.grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.vehicles{grid-template-columns:repeat(4,minmax(0,1fr))}
+.vehicle{padding:4px}
+.name{font-size:10px}
+.number{font-size:20px}
+.controls button{padding:9px 0}
+}
+@media(max-width:350px){.vehicles{grid-template-columns:repeat(3,minmax(0,1fr))}}
+</style>
+</head>
+<body>
+<header>
+<h2>🚗 Aforo vehicular</h2>
+<div>Conteo y clasificación vehicular MTC</div>
+</header>
+<main>
+<section>
+<h3>1. Datos del aforo</h3>
+<div class="grid">
+<div><label>Intersección / Tramo</label><input id="place" placeholder="Nombre de intersección"></div>
+<div><label>Estación</label><input id="station" placeholder="Código de estación"></div>
+<div><label>Fecha de conteo</label><input id="date" type="date"></div>
+<div><label>Giros (ejemplo: 1,2,3,4)</label><input id="turns" value="1,2,3,4"></div>
+</div>
+<details>
+<summary>Configurar horarios</summary>
+<div class="grid" style="margin-top:10px">
+<div><label>Hora inicial</label><input id="start" type="time" value="06:00"></div>
+<div><label>Hora final</label><input id="end" type="time" value="10:00"></div>
+</div>
+</details>
+<div class="buttons">
+<button class="blue" onclick="configure()">Aplicar configuración</button>
+<button class="red" onclick="resetAll()">Nueva intersección / Reiniciar</button>
+</div>
+</section>
+<section>
+<h3>2. Registro de vehículos</h3>
+<div class="grid">
+<div><label>Giro activo</label><select id="turn" onchange="render()"></select></div>
+<div><label>Intervalo activo</label><select id="period" onchange="render()"></select></div>
+</div>
+<div class="summary">
+<div>Intervalo y giro<strong id="subtotal">0</strong></div>
+<div>Total de todas las fechas<strong id="total">0</strong></div>
+</div>
+<div class="buttons">
+<button class="gray" onclick="move(-1)">← Anterior</button>
+<button class="gray" onclick="move(1)">Siguiente →</button>
+<button class="gray" onclick="undo()">↶ Deshacer</button>
+</div>
+</section>
+<section>
+<h3>3. Tipologías vehiculares</h3>
+<div class="vehicles" id="vehicles"></div>
+</section>
+<section>
+<h3>4. Exportación y respaldo</h3>
+<div class="buttons">
+<button class="blue" onclick="exportExcel()">📊 Exportar Excel multifecha</button>
+<button class="gray" onclick="backup()">💾 Guardar respaldo</button>
+<button class="gray" onclick="document.getElementById('file').click()">📂 Recuperar respaldo</button>
+</div>
+<input id="file" type="file" accept=".json" hidden onchange="restore(event)">
+<p class="small">Los conteos se guardan en este dispositivo. Exporta respaldos periódicamente. No borres los datos del navegador.</p>
+</section>
+</main>
+<script>
+"use strict";
+const TYPES=[
+"Auto","Station Wagon","Pick Up","Rural (Combi)",
+"Micro","Bus 2E","Bus 3E","Bus 4E",
+"Camión 2E","Camión 3E","Camión 4E","Camión 8x4",
+"Semi 2S1","Semi 2S2","Semi 2S3","Semi 3S1",
+"Semi 3S2","Semi >=3S3",
+"Tráiler 2T2","Tráiler 2T3","Tráiler 3T2",
+"Tráiler >=3T3","Mototaxi","Moto"
+];
+const $=id=>document.getElementById(id);
+const STORE="aforo_vehicular_v1";
+function fresh(){
+let d=new Date();
+let date=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+return {place:"",station:"",date,turns:"1,2,3,4",start:"06:00",end:"10:00",counts:{}};
+}
+let state;
+try{state=JSON.parse(localStorage.getItem(STORE))||fresh()}
+catch(e){state=fresh()}
+if(!state.counts||typeof state.counts!=="object")state=fresh();
+let actions=[];
+function save(){
+try{localStorage.setItem(STORE,JSON.stringify(state))}
+catch(e){alert("No se pudo guardar. Exporta un respaldo.")}
+}
+function fill(){
+["place","station","date","turns","start","end"].forEach(k=>$(k).value=state[k]);
+}
+function read(){
+["place","station","date","turns","start","end"].forEach(k=>state[k]=$(k).value);
+}
+function turns(){
+return [...new Set(state.turns.split(",").map(x=>x.trim()).filter(Boolean))];
+}
+function mins(s){let [h,m]=s.split(":").map(Number);return h*60+m}
+function time(n){
+n=((n%1440)+1440)%1440;
+return String(Math.floor(n/60)).padStart(2,"0")+":"+String(n%60).padStart(2,"0");
+}
+function periods(){
+let a=mins(state.start),b=mins(state.end);
+if(b<=a)b+=1440;
+let out=[];
+for(let t=a;t+15<=b;t+=15)out.push(time(t)+" - "+time(t+15));
+return out;
+}
+function selectors(){
+let oldTurn=$("turn").value,oldPeriod=$("period").value;
+$("turn").replaceChildren();
+$("period").replaceChildren();
+turns().forEach(t=>$("turn").add(new Option("Giro "+t,t)));
+periods().forEach(t=>$("period").add(new Option(t,t)));
+if(turns().includes(oldTurn))$("turn").value=oldTurn;
+if(periods().includes(oldPeriod))$("period").value=oldPeriod;
+}
+function configure(){
+let old={...state};
+read();
+if(!state.date||!turns().length||!periods().length){
+state=old;fill();
+alert("Revisa la fecha, los giros y los horarios.");return;
+}
+actions=[];save();selectors();render();
+}
+function key(t){
+return JSON.stringify([state.date,$("period").value,$("turn").value,t]);
+}
+function value(k){return Number(state.counts[k])||0}
+function change(t,d){
+let k=key(t),before=value(k),after=Math.max(0,before+d);
+if(before===after)return;
+actions.push({k,before});
+if(actions.length>100)actions.shift();
+if(after)state.counts[k]=after;else delete state.counts[k];
+save();render();
+}
+function undo(){
+let a=actions.pop();
+if(!a)return;
+if(a.before)state.counts[a.k]=a.before;
+else delete state.counts[a.k];
+save();render();
+}
+function move(d){
+let s=$("period"),i=s.selectedIndex+d;
+if(i>=0&&i<s.options.length){s.selectedIndex=i;render()}
+}
+function render(){
+let area=$("vehicles");area.replaceChildren();
+let sum=0;
+TYPES.forEach(t=>{
+let n=value(key(t));sum+=n;
+let card=document.createElement("div");card.className="vehicle";
+let name=document.createElement("div");name.className="name";name.textContent=t;
+let num=document.createElement("div");num.className="number";num.textContent=n;
+let controls=document.createElement("div");controls.className="controls";
+let minus=document.createElement("button");minus.className="minus";minus.textContent="−";
+minus.onclick=()=>change(t,-1);
+let plus=document.createElement("button");plus.className="plus";plus.textContent="+";
+plus.onclick=()=>change(t,1);
+controls.append(minus,plus);card.append(name,num,controls);area.append(card);
+});
+$("subtotal").textContent=sum;
+$("total").textContent=Object.values(state.counts).reduce((a,b)=>a+Number(b||0),0);
+}
+function rows(){
+let map=new Map();
+for(let [k,n] of Object.entries(state.counts)){
+try{
+let [date,period,turn,type]=JSON.parse(k);
+if(!TYPES.includes(type)||!Number(n))continue;
+let id=JSON.stringify([date,period,turn]);
+if(!map.has(id))map.set(id,{date,period,turn,values:{}});
+map.get(id).values[type]=(map.get(id).values[type]||0)+Number(n);
+}catch(e){}
+}
+return [...map.values()].sort((a,b)=>a.date.localeCompare(b.date)||
+a.period.localeCompare(b.period)||String(a.turn).localeCompare(String(b.turn),undefined,{numeric:true}));
+}
+function download(content,name,mime){
+let blob=content instanceof Blob?content:new Blob([content],{type:mime});
+let url=URL.createObjectURL(blob);
+let a=document.createElement("a");a.href=url;a.download=name;
+document.body.append(a);a.click();a.remove();
+setTimeout(()=>URL.revokeObjectURL(url),30000);
+}
+function backup(){
+download(JSON.stringify(state,null,2),"Respaldo_Aforo_vehicular.json","application/json");
+}
+function restore(e){
+let file=e.target.files[0];if(!file)return;
+let reader=new FileReader();
+reader.onload=()=>{
+try{
+let obj=JSON.parse(reader.result);
+if(!obj.counts||typeof obj.counts!=="object")throw Error();
+if(!confirm("¿Reemplazar los conteos actuales por el respaldo?"))return;
+state={...fresh(),...obj};actions=[];save();fill();selectors();render();
+alert("Respaldo recuperado.");
+}catch(err){alert("Respaldo no válido.")}
+};
+reader.readAsText(file);e.target.value="";
+}
+function resetAll(){
+if(!confirm("¿Nueva intersección? Exporta primero tus conteos y respaldo."))return;
+if(!confirm("¿Confirmas borrar todos los conteos de todas las fechas?"))return;
+state=fresh();actions=[];save();fill();selectors();render();
+}
+const enc=new TextEncoder();
+function xml(s){return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
+function column(n){
+let s="";while(n){n--;s=String.fromCharCode(65+n%26)+s;n=Math.floor(n/26)}return s;
+}
+function worksheet(data){
+let body=data.map((row,i)=>{
+let cells=row.map((v,j)=>{
+let ref=column(j+1)+(i+1);
+if(typeof v==="number"&&Number.isFinite(v))
+return `<c r="${ref}"><v>${v}</v></c>`;
+return `<c r="${ref}" t="inlineStr"><is><t>${xml(v)}</t></is></c>`;
+}).join("");
+return `<row r="${i+1}">${cells}</row>`;
+}).join("");
+return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'+
+body+'</sheetData></worksheet>';
+}
+const table=(()=>{
+let a=new Uint32Array(256);
+for(let i=0;i<256;i++){
+let c=i;for(let j=0;j<8;j++)c=(c&1)?0xedb88320^(c>>>1):c>>>1;
+a[i]=c>>>0;
+}return a;
+})();
+function crc(bytes){
+let c=0xffffffff;
+for(let b of bytes)c=table[(c^b)&255]^(c>>>8);
+return (c^0xffffffff)>>>0;
+}
+function u16(n){return [n&255,(n>>>8)&255]}
+function u32(n){return [n&255,(n>>>8)&255,(n>>>16)&255,(n>>>24)&255]}
+function zip(files){
+let chunks=[],central=[],offset=0;
+for(let [name,content] of files){
+let n=enc.encode(name),b=enc.encode(content),c=crc(b);
+let local=new Uint8Array([
+...u32(0x04034b50),...u16(20),...u16(0),...u16(0),
+...u16(0),...u16(0),...u32(c),...u32(b.length),
+...u32(b.length),...u16(n.length),...u16(0),...n
+]);
+chunks.push(local,b);
+central.push(new Uint8Array([
+...u32(0x02014b50),...u16(20),...u16(20),
+...u16(0),...u16(0),...u16(0),...u16(0),
+...u32(c),...u32(b.length),...u32(b.length),
+...u16(n.length),...u16(0),...u16(0),
+...u16(0),...u16(0),...u32(0),...u32(offset),...n
+]));
+offset+=local.length+b.length;
+}
+let size=central.reduce((s,b)=>s+b.length,0);
+chunks.push(...central,new Uint8Array([
+...u32(0x06054b50),...u16(0),...u16(0),
+...u16(files.length),...u16(files.length),
+...u32(size),...u32(offset),...u16(0)
+]));
+return new Blob(chunks,{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+}
+function exportExcel(){
+let data=rows();
+if(!data.length){alert("No hay conteos registrados.");return}
+let header=["Fecha","Intersección","Estación","Intervalo","Giro",...TYPES,"TOTAL"];
+let main=[header],detail=[["Fecha","Intervalo","Giro","Tipología","Cantidad"]];
+let daily=new Map(),totals=TYPES.map(()=>0),overall=0;
+for(let r of data){
+let nums=TYPES.map((t,i)=>{
+let n=r.values[t]||0;totals[i]+=n;
+if(n)detail.push([r.date,r.period,r.turn,t,n]);
+return n;
+});
+let sum=nums.reduce((a,b)=>a+b,0);
+overall+=sum;daily.set(r.date,(daily.get(r.date)||0)+sum);
+main.push([r.date,state.place,state.station,r.period,r.turn,...nums,sum]);
+}
+main.push(["TOTAL GENERAL","","","","",...totals,overall]);
+let summary=[["Fecha","Total vehículos"],...[...daily].sort().map(([d,n])=>[d,n])];
+let names=["Conteo multifecha","Base de datos","Resumen por fecha"];
+let tables=[main,detail,summary];
+let files=[
+["[Content_Types].xml",'<?xml version="1.0" encoding="UTF-8"?>'+
+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'+
+'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'+
+'<Default Extension="xml" ContentType="application/xml"/>'+
+'<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'+
+names.map((_,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("")+
+'</Types>'],
+["_rels/.rels",'<?xml version="1.0" encoding="UTF-8"?>'+
+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
+'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'+
+'</Relationships>'],
+["xl/workbook.xml",'<?xml version="1.0" encoding="UTF-8"?>'+
+'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'+
+names.map((n,i)=>`<sheet name="${xml(n)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join("")+
+'</sheets></workbook>'],
+["xl/_rels/workbook.xml.rels",'<?xml version="1.0" encoding="UTF-8"?>'+
+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
+names.map((_,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join("")+
+'</Relationships>']
+];
+tables.forEach((t,i)=>files.push([`xl/worksheets/sheet${i+1}.xml`,worksheet(t)]));
+download(zip(files),"Aforo_vehicular_multifecha.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+}
+fill();selectors();render();
+$("date").addEventListener("change",()=>{
+state.date=$("date").value;actions=[];save();render();
+});
+["place","station"].forEach(id=>$(id).addEventListener("change",()=>{
+state[id]=$(id).value;save();
+}));
+if("serviceWorker" in navigator){
+window.addEventListener("load",()=>{
+navigator.serviceWorker.register("./service-worker.js")
+.catch(e=>console.warn("Offline no disponible:",e));
+});
+}
+</script>
+</body>
+</html>
